@@ -9,43 +9,25 @@ import {
     Select,
     Typography,
     Button,
-    TextField
+    TextField,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    IconButton,
+    Tooltip
 } from "@mui/material";
+import AddIcon from '@mui/icons-material/Add';
 import chapter1 from '../../data/chapter1';
 import chapter2 from '../../data/chapter2';
 import chapter3 from '../../data/chapter3';
-// const promptDB = {
-//     "Глава 1: Главный субъект (Main Subject)": {
-//         "1.1 - Кто она / Тип персонажа (Character type)": [
-//             { id: 1, ru: "аниме девушка", en: "anime girl", conflicts: [] },
-//             { id: 2, ru: "андроид", en: "android", conflicts: [] },
-//             { id: 3, ru: "эльфийка", en: "elf girl", conflicts: [] },
-//             { id: 4, ru: "кошкодевочка", en: "catgirl", conflicts: [] },
-//             { id: 5, ru: "воительница", en: "warrior woman", conflicts: [] }
-//         ]
-//     },
-//     "Глава 2: Одежда и стиль (Clothing & Style)": {
-//         "2.1 - Тип образа / ролевая тема (Role theme)": [
-//             { id: 6, ru: "горничная", en: "maid", conflicts: [] },
-//             { id: 7, ru: "медсестра", en: "nurse", conflicts: [] }
-//         ]
-//     },
-//     "Глава 3: Анатомия и особенности (Anatomy & Body)": {
-//         "3.1 - Рост (Height)": [
-//             { id: 100, ru: "высокий рост", en: "tall height", conflicts: [101] },
-//             { id: 101, ru: "низкий рост", en: "short height", conflicts: [100] }
-//         ],
-//         "3.2 - Размер груди (Breast size)": [
-//             { id: 102, ru: "большая грудь", en: "large breasts", conflicts: [103] },
-//             { id: 103, ru: "маленькая грудь", en: "small breasts", conflicts: [102] }
-//         ]
-//     }
-// };
+
 const promptDB = {
     ...chapter1,
     ...chapter2,
     ...chapter3,
 };
+
 function getPromptById(id) {
     for (const group of Object.values(promptDB)) {
         for (const prompts of Object.values(group)) {
@@ -68,25 +50,35 @@ function getAllPromptOrder() {
 
 export default function PromptSelector() {
     const [selectedPrompts, setSelectedPrompts] = useState({});
+    const [open, setOpen] = useState(false);
+    const [addToSubcategory, setAddToSubcategory] = useState("");
 
     const handleChange = (subcategory, selectedIds) => {
-        const updated = {};
-        const newPromptObjects = selectedIds.map(getPromptById).filter(Boolean);
-        const newConflicts = newPromptObjects.flatMap((p) => p.conflicts);
+        const updated = { ...selectedPrompts };
+        const currentSelected = updated[subcategory] || [];
 
-        for (const [key, ids] of Object.entries(selectedPrompts)) {
-            updated[key] = ids.filter((id) => !newConflicts.includes(id));
+        // Найдём, какой ID был изменён
+        const added = selectedIds.find(id => !currentSelected.includes(id));
+        const removed = currentSelected.find(id => !selectedIds.includes(id));
+
+        if (removed) {
+            updated[subcategory] = currentSelected.filter(id => id !== removed);
+            setSelectedPrompts(updated);
+            return;
         }
 
-        const lastSelectedId = selectedIds[selectedIds.length - 1];
-        const lastPrompt = getPromptById(lastSelectedId);
-        if (!lastPrompt) return;
+        if (!added) return;
 
-        const cleaned = (updated[subcategory] || []).filter(
-            (id) => !lastPrompt.conflicts.includes(id)
-        );
+        const newPrompt = getPromptById(added);
+        if (!newPrompt) return;
 
-        updated[subcategory] = Array.from(new Set([...cleaned, lastPrompt.id]));
+        // Удаляем конфликтующие теги
+        for (const key in updated) {
+            updated[key] = (updated[key] || []).filter(id => !newPrompt.conflicts.includes(id));
+        }
+
+        const cleaned = (updated[subcategory] || []).filter(id => !newPrompt.conflicts.includes(id));
+        updated[subcategory] = Array.from(new Set([...cleaned, newPrompt.id]));
 
         setSelectedPrompts(updated);
     };
@@ -98,10 +90,27 @@ export default function PromptSelector() {
         }));
     };
 
-    const flatSelected = Object.values(selectedPrompts)
-        .flat()
-        .filter(Boolean);
+    const handleManualAdd = (subcategory, id) => {
+        const prompt = getPromptById(id);
+        if (!prompt) return;
 
+        setSelectedPrompts((prev) => {
+            const newState = { ...prev };
+
+            for (const key in newState) {
+                newState[key] = newState[key].filter((pid) => !prompt.conflicts.includes(pid));
+            }
+
+            newState[subcategory] = Array.from(
+                new Set([...(newState[subcategory] || []).filter((pid) => !prompt.conflicts.includes(pid)), id])
+            );
+
+            return newState;
+        });
+        setOpen(false);
+    };
+
+    const flatSelected = Object.values(selectedPrompts).flat().filter(Boolean);
     const orderedPromptIds = getAllPromptOrder().filter((id) => flatSelected.includes(id));
     const orderedPrompts = orderedPromptIds.map(getPromptById);
     const fullPrompt = orderedPrompts.map((p) => p.en).join(", ");
@@ -117,8 +126,8 @@ export default function PromptSelector() {
 
     return (
         <Box sx={{ p: 4, maxWidth: 800, margin: "0 auto" }}>
-            <Typography variant="h5" gutterBottom>
-                Генератор промптов — С конфликтами
+            <Typography variant="h5" gutterBottom sx={{textAlign: "center", mb: 5}}>
+                Генератор промптов
             </Typography>
 
             {Object.entries(promptDB).map(([chapter, subcategories]) => (
@@ -126,7 +135,9 @@ export default function PromptSelector() {
                     <Typography variant="h6" gutterBottom>{chapter}</Typography>
                     {Object.entries(subcategories).map(([subcategory, prompts]) => (
                         <FormControl fullWidth sx={{ mb: 2 }} key={subcategory}>
-                            <InputLabel>{subcategory}</InputLabel>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <InputLabel>{subcategory}</InputLabel>
+                            </Box>
                             <Select
                                 multiple
                                 value={selectedPrompts[subcategory] || []}
@@ -139,7 +150,7 @@ export default function PromptSelector() {
                                             return (
                                                 <Chip
                                                     key={id}
-                                                    label={`${prompt.ru} / ${prompt.en}`}
+                                                    label={`${prompt.ru}`}
                                                     onMouseDown={(event) => event.stopPropagation()}
                                                     onDelete={() => handleDelete(subcategory, id)}
                                                 />
@@ -148,11 +159,47 @@ export default function PromptSelector() {
                                     </Box>
                                 )}
                             >
-                                {prompts.map((prompt) => (
-                                    <MenuItem key={prompt.id} value={prompt.id}>
-                                        {prompt.ru} / {prompt.en}
-                                    </MenuItem>
-                                ))}
+                                {prompts.map((prompt) => {
+                                    const conflictsWith = flatSelected.filter(selectedId =>
+                                        getPromptById(selectedId)?.conflicts?.includes(prompt.id)
+                                    );
+                                    const isConflicting = conflictsWith.length > 0;
+
+                                    return (
+                                        <MenuItem
+                                            key={prompt.id}
+                                            value={prompt.id}
+                                            sx={{
+                                                opacity: isConflicting ? 0.8 : 1,
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                            }}
+                                        >
+
+                                                <Typography>
+                                                    {prompt.ru}
+                                                </Typography>
+                                                {isConflicting && (
+                                                    <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                        {conflictsWith.map(id => {
+                                                            const p = getPromptById(id);
+                                                            return (
+                                                                <Chip
+                                                                    key={id}
+                                                                    label={p?.ru || id}
+                                                                    size="small"
+                                                                    color="error"
+                                                                    variant="outlined"
+                                                                />
+                                                            );
+                                                        })}
+                                                    </Box>
+                                                )}
+                                        </MenuItem>
+                                    );
+                                })}
+
                             </Select>
                         </FormControl>
                     ))}
@@ -170,9 +217,75 @@ export default function PromptSelector() {
                         InputProps={{ readOnly: true }}
                         sx={{ mb: 2 }}
                     />
-                    <Button variant="contained" onClick={handleCopy}>Скопировать</Button>
+
+                    <Typography variant="h6" sx={{ mt: 2 }}>Выбранные теги:</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                        {orderedPrompts.map((prompt) => {
+                            const subcategory = Object.keys(selectedPrompts).find((key) =>
+                                selectedPrompts[key].includes(prompt.id)
+                            );
+                            return (
+                                <React.Fragment key={prompt.id}>
+                                    <Chip
+                                        label={`${prompt.ru} / ${prompt.en}`}
+                                        onDelete={() => handleDelete(subcategory, prompt.id)}
+                                    />
+                                    <IconButton
+                                        aria-label="добавить тег"
+                                        size="small"
+                                        onClick={() => {
+                                            setAddToSubcategory(subcategory);
+                                            setOpen(true);
+                                        }}
+                                        sx={{ background: '#44944A' }}
+                                    >
+                                        <AddIcon />
+                                    </IconButton>
+                                </React.Fragment>
+                            );
+                        })}
+                    </Box>
+
+                    <Button variant="contained" sx={{ mt: 2 }} onClick={handleCopy}>
+                        Скопировать
+                    </Button>
                 </Box>
             )}
+
+            <Dialog open={open} onClose={() => setOpen(false)} fullWidth
+                    maxWidth="lg">
+                <DialogTitle>Добавить тег вручную</DialogTitle>
+                <DialogContent sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    {addToSubcategory && promptDB && Object.entries(promptDB).flatMap(([_, subcats]) => (
+                        Object.entries(subcats).map(([key, prompts]) => (
+                            key === addToSubcategory && prompts.map((prompt) => {
+                                const conflictsWith = flatSelected.filter(id => getPromptById(id)?.conflicts?.includes(prompt.id));
+                                const isConflicting = conflictsWith.length > 0;
+                                const tooltipTitle = isConflicting
+                                    ? `Заменит: ${conflictsWith.map(id => getPromptById(id)?.ru).join(", ")}`
+                                    : "Можно выбрать";
+                                return (
+                                    <Tooltip key={prompt.id} title={tooltipTitle} arrow>
+                                        <Chip
+                                            label={`${prompt.ru} / ${prompt.en}`}
+                                            onClick={() => handleManualAdd(addToSubcategory, prompt.id)}
+                                            sx={{
+                                                cursor: 'pointer',
+                                                opacity: isConflicting ? 0.6 : 1,
+                                                border: isConflicting ? '1px solid red' : undefined,
+                                                m: 0.5
+                                            }}
+                                        />
+                                    </Tooltip>
+                                );
+                            })
+                        ))
+                    ))}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setOpen(false)}>Закрыть</Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 }
